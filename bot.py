@@ -1,5 +1,5 @@
 from collections import UserDict
-import datetime
+from datetime import datetime, date, timedelta
 from colorama import Fore
 import re
 
@@ -23,8 +23,6 @@ def input_error(func):
             print(f"{Fore.RED}Given username was not found in the contact list.{Fore.RESET}")
         except IndexError:
             print(f"{Fore.RED}Too few arguments were given.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
-        except PhoneAlreadyExistsError:
-            print(f"{Fore.RED}Phone already in this user's record.{Fore.RESET}")
     return inner
 
 class ArgumentInstanceError(Exception):
@@ -78,12 +76,10 @@ class Birthday(Field):
             raise ValueError("Invalid date format. Use DD.MM.YYYY")
 
 class Record:
-    def __init__(self, name: str, phone: str = None, birthday: str = None) -> None:
+    def __init__(self, name: str) -> None:
         self.name = Name(name)
         self.phones = []
         self.birthday = None
-        if phone:
-            self.phones.append(Phone(phone))
 
     def phone_in_phones(self, phone: str) -> Phone | None:
         for p in self.phones:
@@ -97,8 +93,7 @@ class Record:
 
     def add_phone(self, phone: str) -> None:
         if self.phone_in_phones(phone):
-            raise PhoneAlreadyExistsError
-            # raise ValueError(f"Phone is already in {self.name.value}'s record")
+            raise ValueError(f"Phone is already in {self.name.value}'s record")
         phone_obj = Phone(phone)
         self.phones.append(phone_obj)  
 
@@ -208,16 +203,59 @@ def show_phone(args: list[str], book: AddressBook) -> str:
     else:
         return f"{Fore.GREEN}{contacts.get(username)}{Fore.RESET}"
 
-# @input_error
-# def show_all(contacts: AddressBook) -> str:
-#     return contacts
-    # if contacts:
-    #     heading_message = f"{Fore.YELLOW}Your contact list:{Fore.RESET}"
-    #     contacts_list = [f"\n - {key}: {contacts.get(key)}" for key in contacts.keys()]
-    #     final_list = [heading_message] + contacts_list
-    #     return "".join(final_list)
-    # else:
-    #     raise ValueError("no contacts")
+@input_error
+def show_all(contacts: AddressBook) -> str:
+    return contacts
+    if contacts:
+        heading_message = f"{Fore.YELLOW}Your contact list:{Fore.RESET}"
+        contacts_list = [f"\n - {key}: {contacts.get(key)}" for key in contacts.keys()]
+        final_list = [heading_message] + contacts_list
+        return "".join(final_list)
+    else:
+        raise ValueError("no contacts")
+
+@input_error
+def add_birthday(args, book: AddressBook) -> None:
+    name, birthday, *_ = args
+    record = book.find(name)
+    if record.birthday == None:
+        record.add_birthday(birthday)
+    
+@input_error
+def show_birthday(args, book: AddressBook) -> Birthday:
+    name, *_ = args
+    record = book.find(name)
+    if record.birthday == None:
+        raise ValueError(f"Record with name '{name}' was not found.")
+    return record.birthday
+
+@input_error
+def birthdays(args, book: AddressBook):
+    upcoming_birthdays = get_upcoming_birthdays(book)
+    heading_message = f"{Fore.YELLOW}Upcoming birthdays in your address book:{Fore.RESET}"
+    birthdays_list = [f"\n - {birthday[0]}: {birthday[1]}" for birthday in upcoming_birthdays.items()]
+    final_list = [heading_message] + birthdays_list
+    return "".join(final_list)
+
+
+def get_upcoming_birthdays(book: AddressBook) -> list:
+    congratulate_users = []
+    today = date.today()
+    for name, record in book.items():
+        birthday = datetime.strptime(record.bitrhday, r"%d.%m.%Y").date()
+        birthday_this_year = date(today.year, birthday.month, birthday.day)
+        if birthday_this_year - today <= timedelta(days=7):         #check whether it's in the upcoming week
+            if birthday_this_year < today:                          #check if it's already too late. then +1 year = "Якщо так, розгляньте дату на наступний рік"
+                birthday_this_year = date(birthday_this_year.year + 1, birthday.month, birthday.day)
+            #check for weekends
+            if birthday_this_year.weekday() == 5:
+                birthday_this_year = birthday_this_year + timedelta(days=2)
+            elif birthday_this_year.weekday() == 6:
+                birthday_this_year = birthday_this_year + timedelta(days=1)
+
+            birthday_this_year = birthday_this_year.strftime(r"%d.%m.%Y")
+            congratulate_users.append({name: birthday_this_year})
+    return congratulate_users
 
 if __name__ == "__main__":
     contact_dict = AddressBook()
@@ -237,9 +275,9 @@ if __name__ == "__main__":
             case "add":
                 add_contact(args, contact_dict)
             # case "change":
-            #     print(change_contact(args, contacts=contact_dict))
-            # case "phone":
-            #     print(show_phone(args, contacts=contact_dict))
+                print(change_contact(args, contacts=contact_dict))
+            case "phone":
+                print(show_phone(args, contacts=contact_dict))
             case "all":
                 print(contact_dict)
             case "close" | "exit":
