@@ -1,0 +1,260 @@
+from collections import UserDict
+import datetime
+from colorama import Fore
+import re
+
+def input_error(func):
+    def inner(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ValueError as e:        
+            if "wrong argument" in str(e):
+                print(f"{Fore.RED}One of the arguments is wrong.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
+            elif "name or phone" in str(e):
+                print(f"{Fore.RED}Name or phone was not provided.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
+            elif "already in contacts" in str(e):
+                print(f"{Fore.RED}Contact already exists.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
+            elif "no contacts" in str(e):
+                print(f"{Fore.RED}Contact list is empty.{Fore.RESET}")
+            else:
+                print(f"{Fore.RED}{e}{Fore.RESET}")
+            
+        except KeyError:
+            print(f"{Fore.RED}Given username was not found in the contact list.{Fore.RESET}")
+        except IndexError:
+            print(f"{Fore.RED}Too few arguments were given.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
+        except PhoneAlreadyExistsError:
+            print(f"{Fore.RED}Phone already in this user's record.{Fore.RESET}")
+    return inner
+
+class ArgumentInstanceError(Exception):
+    pass
+
+class PhoneAlreadyExistsError(Exception):
+    pass
+
+class Field:
+    def __init__(self, value) -> None:
+        self.value = value
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+class Name(Field):
+    def __init__(self, name: str) -> None:
+        if not name.isalpha():
+            raise ValueError("Name must be alphabetic")
+        super().__init__(name.casefold())
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, Name) and self.value == other.value
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+class Phone(Field):
+    def __init__(self, phone) -> None:
+        if not phone.isdigit():
+            raise ValueError("Phone number must consist of digits")
+        elif len(phone)!=10: 
+            raise ValueError("Phone number must consist of 10 digits")
+        else:
+            super().__init__(phone)
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Phone) and self.value == other.value:
+            return True
+        return NotImplemented
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+class Birthday(Field):
+    def __init__(self, value):
+        try:
+            self.birthday = datetime.strptime(value, "%d.%m.%Y")
+            super().__init__(value)
+        except ValueError:
+            raise ValueError("Invalid date format. Use DD.MM.YYYY")
+
+class Record:
+    def __init__(self, name: str, phone: str = None, birthday: str = None) -> None:
+        self.name = Name(name)
+        self.phones = []
+        self.birthday = None
+        if phone:
+            self.phones.append(Phone(phone))
+
+    def phone_in_phones(self, phone: str) -> Phone | None:
+        for p in self.phones:
+            if p.value == phone:
+                return p
+        return None
+    
+    def add_birthday(self, birthday: str) -> None:
+        if not self.birthday:
+            self.birthday = Birthday(birthday)
+
+    def add_phone(self, phone: str) -> None:
+        if self.phone_in_phones(phone):
+            raise PhoneAlreadyExistsError
+            # raise ValueError(f"Phone is already in {self.name.value}'s record")
+        phone_obj = Phone(phone)
+        self.phones.append(phone_obj)  
+
+    def remove_phone(self, phone: str) -> None:
+        phone_obj = self.phone_in_phones(phone)
+        if phone_obj:
+            self.phones.remove(phone_obj)
+        else:
+            raise ValueError("Phone number not found.")
+
+    def edit_phone(self, old_phone: str, new_phone: str) -> None:
+        old_phone_obj = self.phone_in_phones(old_phone)
+        if old_phone_obj:
+            self.phones.remove(old_phone_obj)
+            new_phone_obj = Phone(new_phone)
+            self.phones.append(new_phone_obj)
+        else: 
+            raise ValueError("Phone number not found.")
+
+    def find_phone(self, phone: str) -> str | None:
+        if self.phone_in_phones(phone):
+            return str(phone)
+        return None
+
+    def __str__(self) -> str:
+        if self.phones:
+            return f"Contact name: {self.name.value.capitalize()}, phones: {'; '.join(p.value for p in self.phones)}"
+        return f"There are no phones in {self.name.value.capitalize()}'s record"
+
+class AddressBook(UserDict):
+    def add_record(self, record: Record) -> None:
+        if not isinstance(record, Record):
+            raise ArgumentInstanceError("The argument must be a record")
+        elif record.name.value in self.data.keys():
+            raise ValueError(f"Name is already in address book")
+        self.data[record.name.value] = record
+
+    #find record by name
+    def find(self, name: str) -> Record | str:
+        try:
+            return self.data[name.casefold()]                   
+        except KeyError:
+            return None
+        # f"Name '{name.casefold().capitalize()}' was not found in the address book."
+
+    def delete(self, name: str) -> None:
+        try:
+            self.data.pop(name.casefold())
+        except KeyError:
+            return None
+        # f"Name '{name.casefold().capitalize()}' was not found in the address book."
+    
+    def __str__(self) -> str:
+        result = ""
+        for name, record in self.data.items():
+            result += str(record) + "\n"
+        return result.strip()
+
+def parse_input(user_input: str) -> tuple[str, list[str]]:
+    cmd, *args = user_input.split(" ", 2)    
+    return cmd, args
+
+@input_error
+def add_contact(args: list[str], book: AddressBook) -> str:
+    if len(args) < 2:
+        raise IndexError
+    
+    record = book.find(args[0])
+    name, phone, *_ = args
+
+    if not record:
+        record_entry = Record(name)
+        record_entry.add_phone(phone)
+        book.add_record(record_entry)
+        print(f"{Fore.GREEN}Contact added.{Fore.RESET}")
+    else: 
+        record.add_phone(phone)
+        print(f"{Fore.GREEN}Contact updated.{Fore.RESET}")
+
+@input_error
+def change_contact(args: list[str], book: AddressBook) -> str:
+    if len(args) < 2:
+        raise IndexError
+    
+    username = args[0]
+    phone = args[1].replace(" ", "")
+
+    if not username or not phone:
+        raise ValueError("name or phone not given")
+    elif username[1:].isdigit() or phone.isalpha():
+        raise ValueError("wrong argument")
+    elif username not in contacts:
+        raise KeyError
+    else:
+        contacts.update({username: phone})
+        return f"{Fore.GREEN}Contact updated.{Fore.RESET}"
+
+@input_error
+def show_phone(args: list[str], book: AddressBook) -> str:
+    if len(args) < 1:
+        raise IndexError
+    
+    username = args[0]
+
+    if username not in contacts:
+        raise KeyError
+    else:
+        return f"{Fore.GREEN}{contacts.get(username)}{Fore.RESET}"
+
+# @input_error
+# def show_all(contacts: AddressBook) -> str:
+#     return contacts
+    # if contacts:
+    #     heading_message = f"{Fore.YELLOW}Your contact list:{Fore.RESET}"
+    #     contacts_list = [f"\n - {key}: {contacts.get(key)}" for key in contacts.keys()]
+    #     final_list = [heading_message] + contacts_list
+    #     return "".join(final_list)
+    # else:
+    #     raise ValueError("no contacts")
+
+if __name__ == "__main__":
+    contact_dict = AddressBook()
+    print(f"{Fore.YELLOW}Welcome to the assistant bot!{Fore.RESET}")
+
+    while True:
+        user_input = input("Enter a command: ").strip().casefold()
+        if len(user_input) < 1:
+            print(f"{Fore.RED}Too few arguments were given.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
+            continue
+        
+        command, args = parse_input(user_input)
+
+        match command:
+            case "hello":
+                print(f"{Fore.YELLOW}How can I help you?{Fore.RESET}")
+            case "add":
+                add_contact(args, contact_dict)
+            # case "change":
+            #     print(change_contact(args, contacts=contact_dict))
+            # case "phone":
+            #     print(show_phone(args, contacts=contact_dict))
+            case "all":
+                print(contact_dict)
+            case "close" | "exit":
+                print(f"{Fore.YELLOW}Goodbye!{Fore.RESET}")
+                break
+            case "help":
+                print(f"""
+The following commands are available:
+    * {Fore.GREEN + 'add [username] [phone_number]':<45}{Fore.RESET} - add a contact to the contact list
+    * {Fore.GREEN + 'change [username] [new_phone_number]':<45}{Fore.RESET} - change an already existing contact
+    * {Fore.GREEN + 'phone [username]':<45}{Fore.RESET} - get to know a phone number by the owner's username
+    * {Fore.GREEN + 'all':<45}{Fore.RESET} - get all contacts from the contact list
+    * {Fore.GREEN + 'exit':<45}{Fore.RESET} - close the program
+    * {Fore.GREEN + 'close':<45}{Fore.RESET} - close the program""")
+            case _:
+                print(f"{Fore.RED}Unknown command was given.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
+
+# add yura 1234567890
