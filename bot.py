@@ -16,7 +16,7 @@ def input_error(func):
                 print(f"{Fore.RED}Contact already exists.{Fore.RESET} Use '{Fore.GREEN}help{Fore.RESET}' for additional info.")
             elif "no contacts" in str(e):
                 print(f"{Fore.RED}Contact list is empty.{Fore.RESET}")
-            else:
+            else: # TODO: CHANGE TO MORE SPECIFIC
                 print(f"{Fore.RED}{e}{Fore.RESET}")
             
         except KeyError:
@@ -74,6 +74,9 @@ class Birthday(Field):
             super().__init__(value)
         except ValueError:
             raise ValueError("Invalid date format. Use DD.MM.YYYY")
+    
+    def __str__(self):
+        return str(self.value)
 
 class Record:
     def __init__(self, name: str) -> None:
@@ -153,7 +156,7 @@ class AddressBook(UserDict):
         return result.strip()
 
 def parse_input(user_input: str) -> tuple[str, list[str]]:
-    cmd, *args = user_input.split(" ", 2)    
+    cmd, *args = user_input.split(" ")    
     return cmd, args
 
 @input_error
@@ -161,8 +164,8 @@ def add_contact(args: list[str], book: AddressBook) -> str:
     if len(args) < 2:
         raise IndexError
     
-    record = book.find(args[0])
     name, phone, *_ = args
+    record = book.find(name)
 
     if not record:
         record_entry = Record(name)
@@ -178,48 +181,46 @@ def change_contact(args: list[str], book: AddressBook) -> str:
     if len(args) < 2:
         raise IndexError
     
-    username = args[0]
-    phone = args[1].replace(" ", "")
+    name, old_phone, new_phone, *_ = args
+    record = book.find(name)
 
-    if not username or not phone:
-        raise ValueError("name or phone not given")
-    elif username[1:].isdigit() or phone.isalpha():
-        raise ValueError("wrong argument")
-    elif username not in contacts:
+    if record == None:
         raise KeyError
-    else:
-        contacts.update({username: phone})
-        return f"{Fore.GREEN}Contact updated.{Fore.RESET}"
+    record.edit_phone(old_phone, new_phone)
+    print(f"{Fore.GREEN}Contact updated.{Fore.RESET}")
 
 @input_error
 def show_phone(args: list[str], book: AddressBook) -> str:
     if len(args) < 1:
         raise IndexError
     
-    username = args[0]
-
-    if username not in contacts:
+    name, *_ = args
+    record = book.find(name)
+    if record == None:
         raise KeyError
-    else:
-        return f"{Fore.GREEN}{contacts.get(username)}{Fore.RESET}"
+    print(record)
 
 @input_error
 def show_all(contacts: AddressBook) -> str:
-    return contacts
-    if contacts:
-        heading_message = f"{Fore.YELLOW}Your contact list:{Fore.RESET}"
-        contacts_list = [f"\n - {key}: {contacts.get(key)}" for key in contacts.keys()]
-        final_list = [heading_message] + contacts_list
-        return "".join(final_list)
-    else:
-        raise ValueError("no contacts")
+    print(contacts)
+    # if contacts:
+    #     heading_message = f"{Fore.YELLOW}Your contact list:{Fore.RESET}"
+    #     contacts_list = [f"\n - {key}: {contacts.get(key)}" for key in contacts.keys()]
+    #     final_list = [heading_message] + contacts_list
+    #     return "".join(final_list)
+    # else:
+    #     raise ValueError("no contacts")
 
 @input_error
 def add_birthday(args, book: AddressBook) -> None:
     name, birthday, *_ = args
     record = book.find(name)
-    if record.birthday == None:
+    if not record:
+        raise ValueError(f"Record with name '{name}' was not found.")
+    elif record.birthday == None:
         record.add_birthday(birthday)
+        print(f"{Fore.GREEN}Birthday added to {name.casefold().capitalize()}'s record.{Fore.RESET}")
+
     
 @input_error
 def show_birthday(args, book: AddressBook) -> Birthday:
@@ -227,24 +228,24 @@ def show_birthday(args, book: AddressBook) -> Birthday:
     record = book.find(name)
     if record.birthday == None:
         raise ValueError(f"Record with name '{name}' was not found.")
-    return record.birthday
+    else: 
+        print(f"{name.casefold().capitalize()}'s birthday is on {record.birthday}")
 
 @input_error
-def birthdays(args, book: AddressBook):
+def birthdays(book: AddressBook):
     upcoming_birthdays = get_upcoming_birthdays(book)
     heading_message = f"{Fore.YELLOW}Upcoming birthdays in your address book:{Fore.RESET}"
-    birthdays_list = [f"\n - {birthday[0]}: {birthday[1]}" for birthday in upcoming_birthdays.items()]
+    birthdays_list = [f"\n - {item[0]}: {item[1]}" for birthday in upcoming_birthdays for item in birthday.items()]
     final_list = [heading_message] + birthdays_list
-    return "".join(final_list)
-
+    print("".join(final_list))
 
 def get_upcoming_birthdays(book: AddressBook) -> list:
     congratulate_users = []
     today = date.today()
     for name, record in book.items():
-        birthday = datetime.strptime(record.bitrhday, r"%d.%m.%Y").date()
+        birthday = datetime.strptime(str(record.birthday), r"%d.%m.%Y").date()
         birthday_this_year = date(today.year, birthday.month, birthday.day)
-        if birthday_this_year - today <= timedelta(days=7):         #check whether it's in the upcoming week
+        if birthday_this_year - today <= timedelta(days=7):         #check whether it's in the upcoming week #TODO: something wrong here
             if birthday_this_year < today:                          #check if it's already too late. then +1 year = "Якщо так, розгляньте дату на наступний рік"
                 birthday_this_year = date(birthday_this_year.year + 1, birthday.month, birthday.day)
             #check for weekends
@@ -274,12 +275,18 @@ if __name__ == "__main__":
                 print(f"{Fore.YELLOW}How can I help you?{Fore.RESET}")
             case "add":
                 add_contact(args, contact_dict)
-            # case "change":
-                print(change_contact(args, contacts=contact_dict))
+            case "change":
+                change_contact(args, contact_dict)
             case "phone":
-                print(show_phone(args, contacts=contact_dict))
+                show_phone(args, contact_dict)
             case "all":
-                print(contact_dict)
+                show_all(contact_dict)
+            case "add-birthday":
+                add_birthday(args, contact_dict)
+            case "show-birthday":
+                show_birthday(args, contact_dict)
+            case "birthdays":
+                birthdays(contact_dict)
             case "close" | "exit":
                 print(f"{Fore.YELLOW}Goodbye!{Fore.RESET}")
                 break
